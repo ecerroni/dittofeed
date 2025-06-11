@@ -4170,6 +4170,7 @@ export type GmailSecret = Static<typeof GmailSecret>;
 
 export const SendgridSecret = Type.Object({
   type: Type.Literal(EmailProviderType.SendGrid),
+  name: Type.Optional(Type.String()),
   apiKey: Type.Optional(Type.String()),
   webhookKey: Type.Optional(Type.String()),
 });
@@ -4178,6 +4179,7 @@ export type SendgridSecret = Static<typeof SendgridSecret>;
 
 export const PostMarkSecret = Type.Object({
   type: Type.Literal(EmailProviderType.PostMark),
+  name: Type.Optional(Type.String()),
   apiKey: Type.Optional(Type.String()),
   webhookKey: Type.Optional(Type.String()),
 });
@@ -4186,6 +4188,7 @@ export type PostMarkSecret = Static<typeof PostMarkSecret>;
 
 export const AmazonSesSecret = Type.Object({
   type: Type.Literal(EmailProviderType.AmazonSes),
+  name: Type.Optional(Type.String()),
   accessKeyId: Type.Optional(Type.String()),
   secretAccessKey: Type.Optional(Type.String()),
   region: Type.Optional(Type.String()),
@@ -4214,12 +4217,14 @@ export type AmazonSesMailFields = Static<typeof AmazonSesMailFields>;
 
 export const TestEmailSecret = Type.Object({
   type: Type.Literal(EmailProviderType.Test),
+  name: Type.Optional(Type.String()),
 });
 
 export type TestEmailSecret = Static<typeof TestEmailSecret>;
 
 export const ResendSecret = Type.Object({
   type: Type.Literal(EmailProviderType.Resend),
+  name: Type.Optional(Type.String()),
   apiKey: Type.Optional(Type.String()),
   webhookKey: Type.Optional(Type.String()),
 });
@@ -4228,6 +4233,7 @@ export type ResendSecret = Static<typeof ResendSecret>;
 
 export const MailChimpSecret = Type.Object({
   type: Type.Literal(EmailProviderType.MailChimp),
+  name: Type.Optional(Type.String()),
   apiKey: Type.Optional(Type.String()),
   webhookKey: Type.Optional(Type.String()),
 });
@@ -4236,6 +4242,7 @@ export type MailChimpSecret = Static<typeof MailChimpSecret>;
 
 export const SmtpSecret = Type.Object({
   type: Type.Literal(EmailProviderType.Smtp),
+  name: Type.Optional(Type.String()),
   host: Type.Optional(Type.String()),
   port: Type.Optional(Type.String()),
   username: Type.Optional(Type.String()),

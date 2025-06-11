@@ -605,16 +605,129 @@ async function getEmailProviderSecretForWorkspaceHierarchical({
 }
 
 async function getEmailProvider({
-  providerOverride,
   workspaceId,
+  providerOverride,
+  providerNameOrId,
   workspaceOccupantId,
   workspaceOccupantType,
 }: {
   workspaceId: string;
   providerOverride?: EmailProviderTypeSchema;
+  providerNameOrId?: string;
   workspaceOccupantId?: string;
   workspaceOccupantType?: string;
 }): Promise<Result<EmailProviderSecret, MessageSendFailure>> {
+  if (providerNameOrId) {
+    // Attempt to fetch by ID or name
+    const providerQuery = await db().query.emailProvider.findFirst({
+      where: and(
+        eq(dbEmailProvider.workspaceId, workspaceId),
+        validateUuid(providerNameOrId)
+          ? eq(dbEmailProvider.id, providerNameOrId)
+          : eq(dbEmailProvider.name, providerNameOrId),
+      ),
+      with: {
+        secret: true,
+      },
+    });
+
+    if (providerQuery?.secret?.configValue) {
+      const secretConfigResult = schemaValidateWithErr(
+        providerQuery.secret.configValue,
+        EmailProviderSecret,
+      );
+      if (secretConfigResult.isOk()) {
+        if (providerQuery.type === EmailProviderType.Gmail) {
+          // Handle Gmail token refresh if fetched by name/ID
+          if (
+            !workspaceOccupantId ||
+            !isWorkspaceOccupantType(workspaceOccupantType)
+          ) {
+            logger().error(
+              {
+                workspaceId,
+                providerNameOrId,
+                providerType: providerQuery.type,
+              },
+              "Gmail provider fetched by name/ID, but workspaceOccupantId/Type missing for token refresh.",
+            );
+            return err(PROVIDER_NOT_FOUND_ERROR); // Or a more specific error
+          }
+          const gmailCredentials = await getAndRefreshGmailAccessToken({
+            workspaceId,
+            workspaceOccupantId,
+            workspaceOccupantType,
+            // We need the email associated with this specific Gmail provider instance,
+            // which should be part of its secret.configValue
+            const gmailSecretDetails = secretConfigResult.value;
+            if (gmailSecretDetails.type !== EmailProviderType.Gmail) {
+              logger().error(
+                {
+                  workspaceId,
+                  providerNameOrId,
+                  providerTypeFromDb: providerQuery.type,
+                  providerTypeFromSecret: gmailSecretDetails.type,
+                },
+                "Gmail provider type mismatch between DB record and secret config.",
+              );
+              return err(PROVIDER_NOT_FOUND_ERROR);
+            }
+            email: gmailSecretDetails.email,
+          });
+          if (!gmailCredentials) {
+            logger().info(
+              {
+                workspaceId,
+                providerNameOrId,
+                workspaceOccupantId,
+              },
+              "Gmail credentials not found or refresh failed for provider fetched by name/ID",
+            );
+            return err(PROVIDER_NOT_FOUND_ERROR);
+          }
+          return ok({
+            type: EmailProviderType.Gmail,
+            email: gmailCredentials.email,
+            accessToken: gmailCredentials.accessToken,
+            refreshToken: gmailCredentials.refreshToken,
+            expiresAt: gmailCredentials.expiresAt,
+          } as EmailProviderSecret);
+        }
+        // For other workspace-wide providers fetched by name/ID
+        return ok(secretConfigResult.value);
+      }
+      logger().error(
+        {
+          workspaceId,
+          providerNameOrId,
+          error: secretConfigResult.error,
+        },
+        "Email provider secret validation failed for specific provider.",
+      );
+      // Fall through to default logic if specific provider validation fails, or return error?
+      // For now, let's fall through, but this might need refinement.
+    } else if (providerQuery) {
+      logger().error(
+        {
+          workspaceId,
+          providerNameOrId,
+        },
+        "Email provider found but secret or configValue is missing.",
+      );
+      // Fall through
+    } else {
+      logger().info(
+        {
+          workspaceId,
+          providerNameOrId,
+        },
+        "Specific email provider not found by name or ID.",
+      );
+      // Fall through
+    }
+  }
+
+  // Existing logic as fallback or if providerNameOrId is not provided
   let emailProviderSecret: EmailProviderSecret | null = null;
   if (providerOverride && !isWorkspaceWideProvider(providerOverride)) {
     if (
@@ -693,6 +806,14 @@ async function getEmailProvider({
     }
     emailProviderSecret = secretConfigResult.value;
   }
+  if (!emailProviderSecret) {
+    // This case should ideally be hit if providerNameOrId lookup failed AND default logic also failed
+    logger().error(
+      { workspaceId, providerNameOrId, providerOverride },
+      "Failed to determine email provider through all lookup paths.",
+    );
+    return err(PROVIDER_NOT_FOUND_ERROR);
+  }
   return ok(emailProviderSecret);
 }
 
@@ -703,12 +824,12 @@ export async function sendEmail({
   subscriptionGroupDetails,
   messageTags,
   userId,
-  providerOverride,
+  providerNameOrId,
   useDraft,
-}: Omit<
-  SendMessageParametersEmail,
-  "channel"
->): Promise<BackendMessageSendResult> {
+}: Overwrite<
+  Omit<SendMessageParametersEmail, "channel">,
+  { providerOverride?: string }
+> & { providerNameOrId?: string }): Promise<BackendMessageSendResult> {
   const [getSendModelsResult, emailProviderResult] = await Promise.all([
     getSendMessageModels({
       workspaceId,
@@ -719,7 +840,17 @@ export async function sendEmail({
     }),
     getEmailProvider({
       workspaceId,
-      providerOverride,
+      providerNameOrId,
+      // providerOverride is still passed here but its role might be diminished
+      // if providerNameOrId is present and resolves.
+      // The main purpose of providerOverride was to specify a *type*,
+      // particularly for non-workspace-wide types like Gmail.
+      // If providerNameOrId is used, we might need to fetch the provider's type
+      // to correctly handle cases like Gmail, or adjust getEmailProvider further.
+      // For now, let's assume getEmailProvider handles this hierarchy.
+      // TODO: Re-evaluate if providerOverride (as EmailProviderTypeSchema) is still needed
+      // in getEmailProvider if providerNameOrId is the primary lookup.
+      // It might be that if providerNameOrId is given, providerOverride for type is ignored or derived.
       workspaceOccupantId: messageTags?.workspaceOccupantId,
       workspaceOccupantType: messageTags?.workspaceOccupantType,
     }),

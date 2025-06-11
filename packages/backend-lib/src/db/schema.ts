@@ -223,6 +223,7 @@ export const emailProvider = pgTable(
     workspaceId: uuid().notNull(),
     type: text().notNull(),
     apiKey: text(),
+    name: text().nullable(),
     createdAt: timestamp({ precision: 3, mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp({ precision: 3, mode: "date" })
       .defaultNow()

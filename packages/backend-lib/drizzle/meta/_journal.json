@@ -57,6 +57,13 @@
       "when": 1747972308784,
       "tag": "0007_mysterious_norman_osborn",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1747972400000,
+      "tag": "0008_add_provider_name",
+      "breakpoints": true
     }
   ]
 }
