@@ -8,7 +8,7 @@ import {
   subscriptionGroup as dbSubscriptionGroup,
   workspace as dbWorkspace,
 } from "./db/schema";
-import { sendEmail, sendSms, upsertMessageTemplate } from "./messaging";
+// Removed duplicated import for sendEmail, sendSms, upsertMessageTemplate
 import {
   getEmailProvider,
   sendEmail,
@@ -36,7 +36,7 @@ import {
   Secret,
   EmailProviderSecret,
   MessageSendFailure,
-  InternalEventType,
+  // InternalEventType (removed duplicate)
   BadWorkspaceConfigurationType,
 } from "./types";
 
@@ -58,12 +58,6 @@ jest.mock("./db", () => ({
     },
     // Add other db functions if needed e.g. insert, etc.
   }),
-}));
-
-// Mocking gmail module
-jest.mock("./gmail", () => ({
-  ...jest.requireActual("./gmail"),
-  getAndRefreshGmailAccessToken: jest.fn(),
 }));
 
 // Mocking individual mail sending functions
@@ -89,10 +83,6 @@ jest.mock("./messaging", () => ({
 }));
 
 const mockDb = db as jest.MockedFunction<typeof db>;
-const mockedGetAndRefreshGmailAccessToken =
-  getAndRefreshGmailAccessToken as jest.MockedFunction<
-    typeof getAndRefreshGmailAccessToken
-  >;
 const mockedSendMailSmtp = jest.requireMock("./destinations/smtp").sendMail;
 const mockedSendMailSendgrid =
   jest.requireMock("./destinations/sendgrid").sendMail;
@@ -148,7 +138,7 @@ describe("messaging", () => {
   let workspace: Workspace;
   const defaultWorkspaceId = randomUUID();
   const defaultEmailProviderId = randomUUID();
-  const gmailProviderId = randomUUID();
+  // const gmailProviderId = randomUUID(); // Removed
   const namedProviderId = randomUUID();
 
   const testSecretSmtp: Secret = {
@@ -168,22 +158,7 @@ describe("messaging", () => {
     value: null, // Deprecated
   };
 
-  const testSecretGmail: Secret = {
-    id: randomUUID(),
-    workspaceId: defaultWorkspaceId,
-    name: "gmail-provider-secret-name",
-    configValue: {
-      type: EmailProviderType.Gmail,
-      email: "test@gmail.com",
-      // Typically accessToken, refreshToken, expiresAt are not stored directly here
-      // but are fetched dynamically. For mock setup, this might differ.
-      // The important part for getEmailProvider is the 'email' field.
-      name: "My Gmail Account",
-    } satisfies EmailProviderSecret,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    value: null,
-  };
+  // const testSecretGmail: Secret = { ... }; // Removed
 
   const testSecretNamedSmtp: Secret = {
     id: randomUUID(),
@@ -219,7 +194,7 @@ describe("messaging", () => {
     mockDb().query.emailProvider.findFirst.mockReset();
     mockDb().query.defaultEmailProvider.findFirst.mockReset();
     mockDb().query.workspace.findFirst.mockReset();
-    mockedGetAndRefreshGmailAccessToken.mockReset();
+    // mockedGetAndRefreshGmailAccessToken.mockReset(); // Removed
 
     // Setup default workspace mock for hierarchical lookups
     mockDb().query.workspace.findFirst.mockImplementation(async ({ where }: any) => {
@@ -349,91 +324,8 @@ describe("messaging", () => {
       );
     });
 
-    describe("when fetching Gmail provider by name/id", () => {
-      const gmailProviderUserDefinedName = "My Gmail Account";
-      beforeEach(() => {
-        mockDb().query.emailProvider.findFirst.mockResolvedValueOnce({
-          id: gmailProviderId,
-          workspaceId: defaultWorkspaceId,
-          type: EmailProviderType.Gmail, // Critical: DB schema stores this as text
-          secretId: testSecretGmail.id,
-          secret: testSecretGmail,
-          name: gmailProviderUserDefinedName, // User-defined name in EmailProvider table
-          apiKey: null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-      });
-
-      it("should call getAndRefreshGmailAccessToken and return Gmail secret", async () => {
-        mockedGetAndRefreshGmailAccessToken.mockResolvedValueOnce({
-          accessToken: "new-access-token",
-          refreshToken: "new-refresh-token",
-          expiresAt: Date.now() + 3600000,
-          email: "test@gmail.com",
-        });
-
-        const result = await getEmailProvider({
-          workspaceId: defaultWorkspaceId,
-          providerNameOrId: gmailProviderUserDefinedName,
-          workspaceOccupantId: "occupant-id",
-          workspaceOccupantType: "WorkspaceMember",
-        });
-
-        expect(result.isOk()).toBe(true);
-        const providerSecret = result._unsafeUnwrap();
-        expect(providerSecret.type).toBe(EmailProviderType.Gmail);
-        expect((providerSecret as any).accessToken).toBe("new-access-token");
-        expect(mockedGetAndRefreshGmailAccessToken).toHaveBeenCalledWith({
-          workspaceId: defaultWorkspaceId,
-          workspaceOccupantId: "occupant-id",
-          workspaceOccupantType: "WorkspaceMember",
-          email: "test@gmail.com", // from testSecretGmail.configValue.email
-        });
-      });
-
-      it("should return error if workspaceOccupantId is missing for Gmail by name/id", async () => {
-        const result = await getEmailProvider({
-          workspaceId: defaultWorkspaceId,
-          providerNameOrId: gmailProviderUserDefinedName,
-          // workspaceOccupantId is missing
-          workspaceOccupantType: "WorkspaceMember",
-        });
-
-        expect(result.isErr()).toBe(true);
-        const error = result._unsafeUnwrapErr();
-        expect(error.type).toBe(InternalEventType.BadWorkspaceConfiguration);
-        expect(error.variant.type).toBe(BadWorkspaceConfigurationType.MessageServiceProviderNotFound);
-      });
-    });
-
-     it("should use providerOverride for Gmail if providerNameOrId is not provided", async () => {
-      mockedGetAndRefreshGmailAccessToken.mockResolvedValueOnce({
-        accessToken: "override-access-token",
-        refreshToken: "override-refresh-token",
-        expiresAt: Date.now() + 3600000,
-        email: "override@gmail.com",
-      });
-
-      const result = await getEmailProvider({
-        workspaceId: defaultWorkspaceId,
-        providerOverride: EmailProviderType.Gmail, // Using the type override
-        workspaceOccupantId: "occupant-id-override",
-        workspaceOccupantType: "WorkspaceMember",
-      });
-
-      expect(result.isOk()).toBe(true);
-      const providerSecret = result._unsafeUnwrap();
-      expect(providerSecret.type).toBe(EmailProviderType.Gmail);
-      expect((providerSecret as any).accessToken).toBe("override-access-token");
-      expect(mockedGetAndRefreshGmailAccessToken).toHaveBeenCalledWith({
-        workspaceId: defaultWorkspaceId,
-        workspaceOccupantId: "occupant-id-override",
-        workspaceOccupantType: "WorkspaceMember",
-        // For providerOverride path, email is not passed to getAndRefreshGmailAccessToken
-        // as it's fetched inside that function based on occupant.
-      });
-    });
+    // Removed: describe("when fetching Gmail provider by name/id", () => { ... });
+    // Removed: it("should use providerOverride for Gmail if providerNameOrId is not provided", async () => { ... });
 
     it("should fetch default workspace provider if no overrides are given", async () => {
         mockDb().query.defaultEmailProvider.findFirst.mockResolvedValueOnce({

@@ -125,8 +125,6 @@ const BaseRawConfigProps = {
   enableAdditionalDashboardSettings: Type.Optional(BoolStr),
   additionalDashboardSettingsPath: Type.Optional(Type.String()),
   additionalDashboardSettingsTitle: Type.Optional(Type.String()),
-  gmailClientId: Type.Optional(Type.String()),
-  gmailClientSecret: Type.Optional(Type.String()),
   clickhouseComputePropertiesRequestTimeout: Type.Optional(
     Type.String({ format: "naturalNumber" }),
   ),

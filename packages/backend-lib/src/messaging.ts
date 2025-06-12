@@ -52,11 +52,6 @@ import {
   sendSms as sendSmsTwilio,
   TwilioAuth,
 } from "./destinations/twilio";
-import {
-  getAndRefreshGmailAccessToken,
-  sendGmailEmail,
-  SendGmailEmailParams,
-} from "./gmail";
 import { renderLiquid } from "./liquid";
 import logger from "./logger";
 import {
@@ -637,63 +632,8 @@ async function getEmailProvider({
         EmailProviderSecret,
       );
       if (secretConfigResult.isOk()) {
-        if (providerQuery.type === EmailProviderType.Gmail) {
-          // Handle Gmail token refresh if fetched by name/ID
-          if (
-            !workspaceOccupantId ||
-            !isWorkspaceOccupantType(workspaceOccupantType)
-          ) {
-            logger().error(
-              {
-                workspaceId,
-                providerNameOrId,
-                providerType: providerQuery.type,
-              },
-              "Gmail provider fetched by name/ID, but workspaceOccupantId/Type missing for token refresh.",
-            );
-            return err(PROVIDER_NOT_FOUND_ERROR); // Or a more specific error
-          }
-          const gmailCredentials = await getAndRefreshGmailAccessToken({
-            workspaceId,
-            workspaceOccupantId,
-            workspaceOccupantType,
-            // We need the email associated with this specific Gmail provider instance,
-            // which should be part of its secret.configValue
-            const gmailSecretDetails = secretConfigResult.value;
-            if (gmailSecretDetails.type !== EmailProviderType.Gmail) {
-              logger().error(
-                {
-                  workspaceId,
-                  providerNameOrId,
-                  providerTypeFromDb: providerQuery.type,
-                  providerTypeFromSecret: gmailSecretDetails.type,
-                },
-                "Gmail provider type mismatch between DB record and secret config.",
-              );
-              return err(PROVIDER_NOT_FOUND_ERROR);
-            }
-            email: gmailSecretDetails.email,
-          });
-          if (!gmailCredentials) {
-            logger().info(
-              {
-                workspaceId,
-                providerNameOrId,
-                workspaceOccupantId,
-              },
-              "Gmail credentials not found or refresh failed for provider fetched by name/ID",
-            );
-            return err(PROVIDER_NOT_FOUND_ERROR);
-          }
-          return ok({
-            type: EmailProviderType.Gmail,
-            email: gmailCredentials.email,
-            accessToken: gmailCredentials.accessToken,
-            refreshToken: gmailCredentials.refreshToken,
-            expiresAt: gmailCredentials.expiresAt,
-          } as EmailProviderSecret);
-        }
-        // For other workspace-wide providers fetched by name/ID
+        // For workspace-wide providers fetched by name/ID
+        // Gmail specific logic has been removed.
         return ok(secretConfigResult.value);
       }
       logger().error(
@@ -729,54 +669,16 @@ async function getEmailProvider({
 
   // Existing logic as fallback or if providerNameOrId is not provided
   let emailProviderSecret: EmailProviderSecret | null = null;
-  if (providerOverride && !isWorkspaceWideProvider(providerOverride)) {
-    if (
-      !workspaceOccupantId ||
-      !isWorkspaceOccupantType(workspaceOccupantType)
-    ) {
-      logger().error(
-        {
-          workspaceId,
-          workspaceOccupantId,
-          workspaceOccupantType,
-        },
-        "email provider not found for non-workspace-wide provider. workspaceOccupantId and workspaceOccupantType must be provided.",
-      );
-      return err(PROVIDER_NOT_FOUND_ERROR);
-    }
-    switch (providerOverride) {
-      case EmailProviderType.Gmail: {
-        const gmailCredentials = await getAndRefreshGmailAccessToken({
-          workspaceId,
-          workspaceOccupantId,
-          workspaceOccupantType,
-        });
-        if (!gmailCredentials) {
-          logger().info(
-            {
-              workspaceId,
-              workspaceOccupantId,
-              workspaceOccupantType,
-            },
-            "gmail credentials not found",
-          );
-          return err(PROVIDER_NOT_FOUND_ERROR);
-        }
-        emailProviderSecret = {
-          type: EmailProviderType.Gmail,
-          email: gmailCredentials.email,
-          accessToken: gmailCredentials.accessToken,
-          refreshToken: gmailCredentials.refreshToken,
-          expiresAt: gmailCredentials.expiresAt,
-        };
-        break;
-      }
-      default:
-        assertUnreachable(providerOverride);
-    }
-  } else {
-    const secret = await getEmailProviderSecretForWorkspaceHierarchical({
-      workspaceId,
+  // The if block for non-workspace-wide provider overrides (which primarily handled Gmail)
+  // is removed. It's assumed that with Gmail gone, all remaining EmailProviderType
+  // values are workspace-wide, or that providerOverride is not the mechanism
+  // for member-specific providers anymore if new ones are added.
+  // The main path now is either providerNameOrId lookup or default hierarchical lookup.
+  // If providerOverride is still passed and is not caught by providerNameOrId,
+  // it will be used in getEmailProviderSecretForWorkspaceHierarchical.
+
+  const secret = await getEmailProviderSecretForWorkspaceHierarchical({
+    workspaceId,
       providerOverride,
     });
     if (!secret) {
@@ -1345,70 +1247,7 @@ export async function sendEmail({
       });
     }
 
-    case EmailProviderType.Gmail: {
-      if (!emailProvider.accessToken) {
-        return err({
-          type: InternalEventType.BadWorkspaceConfiguration,
-          variant: {
-            type: BadWorkspaceConfigurationType.MessageServiceProviderMisconfigured,
-            message: "Failed to get or refresh Gmail access token",
-          },
-        });
-      }
-
-      const gmailAttachments: SendGmailEmailParams["attachments"] =
-        attachments?.map((attachment) => ({
-          filename: attachment.name,
-          content: attachment.data,
-          contentType: attachment.mimeType,
-        }));
-
-      const gmailResult = await sendGmailEmail({
-        accessToken: emailProvider.accessToken,
-        params: {
-          to,
-          from,
-          subject,
-          bodyHtml: body,
-          replyTo,
-          cc,
-          bcc,
-          headers,
-          attachments: gmailAttachments,
-        },
-      });
-
-      if (gmailResult.isErr()) {
-        return err({
-          type: InternalEventType.MessageFailure,
-          variant: {
-            type: ChannelType.Email,
-            provider: gmailResult.error,
-          },
-        });
-      }
-      return ok({
-        type: InternalEventType.MessageSent,
-        variant: {
-          type: ChannelType.Email,
-          from,
-          body,
-          to,
-          subject,
-          headers,
-          replyTo,
-          cc: unsplitCc,
-          bcc: unsplitBcc,
-          name: emailName,
-          attachments: attachmentsSent,
-          provider: {
-            type: EmailProviderType.Gmail,
-            messageId: gmailResult.value.messageId,
-            threadId: gmailResult.value.threadId,
-          },
-        },
-      });
-    }
+    // Case for EmailProviderType.Gmail removed.
 
     case EmailProviderType.Resend: {
       const resendAttachments: ResendRequiredData["attachments"] =
