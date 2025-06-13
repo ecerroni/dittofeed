@@ -975,7 +975,12 @@ export type RateLimitNode = Static<typeof RateLimitNode>;
 export const EmailMessageVariant = Type.Object({
   type: Type.Literal(ChannelType.Email),
   templateId: Type.String(),
-  providerOverride: Type.Optional(WorkspaceWideEmailProviders),
+  providerSelection: Type.Optional(
+    Type.String({
+      description:
+        "ID of the selected EmailProvider record, or 'system-default'. If undefined, implies workspace default.",
+    }),
+  ),
 });
 
 export type EmailMessageVariant = Static<typeof EmailMessageVariant>;
@@ -1456,6 +1461,12 @@ export const BaseEmailContents = Type.Object({
     Type.Array(Type.String(), {
       description:
         "Names of user properties to attach to the email as attachments.",
+    }),
+  ),
+  providerSelection: Type.Optional(
+    Type.String({
+      description:
+        "ID of the selected EmailProvider record, or a special value like 'system-default' for workspace default. If undefined, also implies workspace default.",
     }),
   ),
 });
