@@ -26,9 +26,13 @@ import {
 } from "isomorphic-lib/src/types";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react"; // Added useEffect, useState
 
 import { useAppStorePick } from "../../lib/appStore";
+import {
+  SYSTEM_DEFAULT_PROVIDER_ID,
+  default as NamedEmailProviderSelector,
+} from "../NamedEmailProviderSelector"; // Added NamedEmailProviderSelector imports
 import EmailPreviewHeader from "../emailPreviewHeader";
 import TemplateEditor, {
   DraftToPreview,
@@ -84,8 +88,16 @@ function PreviewIframe({ body }: { body?: string }) {
 }
 
 function EmailOptions({ draft, setDraft, disabled }: RenderEditorParams) {
-  const [open, setOpen] = React.useState(false);
-  const { userProperties } = useAppStorePick(["userProperties"]);
+  const [open, setOpen] = useState(false);
+  const { userProperties, workspace: workspaceResult } = useAppStorePick([
+    "userProperties",
+    "workspace",
+  ]);
+  const workspace =
+    workspaceResult.type === CompletionStatus.Successful
+      ? workspaceResult.value
+      : null;
+
   const options = useMemo(() => {
     if (userProperties.type !== CompletionStatus.Successful) {
       return [];
@@ -214,6 +226,30 @@ function EmailOptions({ draft, setDraft, disabled }: RenderEditorParams) {
               }}
               sx={{ mb: 2 }}
             />
+            {workspace && (
+              <NamedEmailProviderSelector
+                workspaceId={workspace.id}
+                value={
+                  (draft as MessageTemplateResourceDraft).type === ChannelType.Email && (draft as MessageTemplateResourceDraft).providerSelection
+                    ? (draft as MessageTemplateResourceDraft).providerSelection
+                    : SYSTEM_DEFAULT_PROVIDER_ID
+                }
+                onChange={(selectedValue) => {
+                  setDraft((currentDraft) => {
+                    if (currentDraft.type !== ChannelType.Email)
+                      return currentDraft;
+                    return {
+                      ...currentDraft,
+                      providerSelection:
+                        selectedValue === SYSTEM_DEFAULT_PROVIDER_ID
+                          ? undefined
+                          : selectedValue ?? undefined,
+                    };
+                  });
+                }}
+                disabled={disabled}
+              />
+            )}
             <Autocomplete
               filterSelectedOptions
               value={draft.attachmentUserProperties ?? []}

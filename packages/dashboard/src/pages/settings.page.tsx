@@ -86,6 +86,7 @@ import {
 import { HubspotIcon } from "../components/icons/hubspotIcon";
 import InfoBox from "../components/infoBox";
 import Layout from "../components/layout";
+import EmailProviderSettings from "../components/EmailProviderSettings"; // Added import
 import { MenuItemGroup } from "../components/menuItems/types";
 import { SubscriptionManagement } from "../components/subscriptionManagement";
 import WebhookSecretTable from "../components/webhookSecretTable";
@@ -1455,9 +1456,28 @@ function WebhookChannelConfig() {
 }
 
 function MessageChannelsConfig() {
+  const { workspace: workspaceResult } = useAppStorePick(["workspace"]);
+  const workspace =
+    workspaceResult.type === CompletionStatus.Successful
+      ? workspaceResult.value
+      : null;
+
+  if (!workspace) {
+    return (
+      <Box>
+        <CircularProgress />
+      </Box>
+    );
+  }
   return (
     <Stack spacing={3}>
       <SectionHeader title="Message Channels" />
+      {/* TODO: Decide on final placement and integration of EmailProviderSettings vs EmailChannelConfig */}
+      {/* For now, adding it here. EmailChannelConfig handles secrets for predefined types. */}
+      {/* EmailProviderSettings handles CRUD of named provider instances. */}
+      <EmailProviderSettings workspaceId={workspace.id} />
+      {/* The existing EmailChannelConfig might be for setting API keys for hardcoded provider types? */}
+      {/* Or parts of it might be replaced or refactored by EmailProviderSettings. */}
       <EmailChannelConfig />
       <SmsChannelConfig />
       <WebhookChannelConfig />
